@@ -10,8 +10,8 @@ Choose which calendars to use.
 Busy times are displayed.
 
 ## Needs:
-A client_secret.json, which is a google calendar api key.
-A credentials.ini file including a random 'secret key'.
+* A client_secret.json, which is a google calendar api key.
+* A credentials.ini file including a random 'secret key'.
 
 
 
