@@ -50,6 +50,7 @@ def index():
   app.logger.debug("Entering index")
   if 'begin_date' not in flask.session:
     init_session_values()
+
   return render_template('index.html')
 
 @app.route("/choose")
@@ -68,6 +69,37 @@ def choose():
     app.logger.debug("Returned from get_gcal_service")
     flask.g.calendars = list_calendars(gcal_service)
     return render_template('index.html')
+
+
+@app.route("/display", methods=["POST"])
+def display():
+    # search for busy times of the selected calendars
+    # assumes authorization and appropriate credentials 
+    # this far in the process
+    """
+   """
+    app.logger.debug("In the 'display' function")
+    cal_service = get_gcal_service(valid_credentials())
+
+    # time-ordered events list
+    flask.g.time_events = []
+    # gets the selected checkBoxes' ids
+    checkBox_id_list = flask.request.form.getlist("calendar")
+    for cal_id in checkBox_id_list:
+      # get calendar's events
+      events = list_events(cal_service, cal_id)
+      app.logger.debug("events: ")
+      app.logger.debug(events)
+      # get events in correct time
+      order = time_order(events)
+      app.logger.debug("ordered: ")
+      app.logger.debug(order)
+      flask.g.time_events.append(order)
+
+      app.logger.debug(flask.g.time_events)
+    
+    return render_template('index.html')
+
 
 ####
 #
@@ -190,6 +222,8 @@ def setrange():
     """
     User chose a date range with the bootstrap daterange
     widget.
+
+    individual date and time as arrow objects to compare
     """
     app.logger.debug("Entering setrange")  
     flask.flash("Setrange gave us '{}'".format(
@@ -197,8 +231,13 @@ def setrange():
     daterange = request.form.get('daterange')
     flask.session['daterange'] = daterange
     daterange_parts = daterange.split()
+
     flask.session['begin_date'] = interpret_date(daterange_parts[0])
     flask.session['end_date'] = interpret_date(daterange_parts[2])
+    #app.logger.debug("non-format date: " + daterange_parts[0])
+    flask.session['begin_time'] = interpret_time(request.form.get('start_time'))
+    flask.session['end_time'] = interpret_time(request.form.get('end_time'))
+
     app.logger.debug("Setrange parsed {} - {}  dates as {} - {}".format(
       daterange_parts[0], daterange_parts[1], 
       flask.session['begin_date'], flask.session['end_date']))
@@ -227,6 +266,7 @@ def init_session_values():
     # Default time span each day, 8 to 5
     flask.session["begin_time"] = interpret_time("9am")
     flask.session["end_time"] = interpret_time("5pm")
+#def interpret_
 
 def interpret_time( text ):
     """
@@ -236,7 +276,7 @@ def interpret_time( text ):
     case it will also flash a message explaining accepted formats.
     """
     app.logger.debug("Decoding time '{}'".format(text))
-    time_formats = ["ha", "h:mma",  "h:mm a", "H:mm"]
+    time_formats = ["ha", "h:mma",  "h:mm a", "H:mm", "hh:mm a"]
     try: 
         as_arrow = arrow.get(text, time_formats).replace(tzinfo=tz.tzlocal())
         as_arrow = as_arrow.replace(year=2016) #HACK see below
@@ -283,7 +323,91 @@ def next_day(isotext):
 #  Functions (NOT pages) that return some information
 #
 ####
+def time_order(events):
+  """
+  Returns list of events that fit between 
+  a given start and end time.
+  """
+  ordered_events = []
+
+  big_start_date = arrow.get(flask.session["begin_date"]).replace(tzinfo='US/Pacific').date()
+  big_end_date = arrow.get(flask.session["end_date"]).replace(tzinfo='US/Pacific').date()
+
+  big_start_time = arrow.get(flask.session["begin_time"]).replace(tzinfo='US/Pacific').time()
+  big_end_time = arrow.get(flask.session["end_time"]).replace(tzinfo='US/Pacific').time()
   
+  for event in events:
+    e_start = event['start']
+    e_end = event['end']
+
+    e_start_time = arrow.get(e_start).replace(tzinfo='US/Pacific').time()
+    e_end_time = arrow.get(e_end).replace(tzinfo='US/Pacific').time()
+    e_start_date = arrow.get(e_start).replace(tzinfo='US/Pacific').date()
+    e_end_date = arrow.get(e_end).replace(tzinfo='US/Pacific').date()
+
+    date_range = e_end_date <= big_end_date and e_start_date >= big_start_date
+    
+    before_lap = e_start_time < big_start_time and e_end_time > big_start_time and date_range
+    after_lap = e_end_time > big_end_time and e_start_time < big_end_time and date_range
+    during = e_end_time <= big_end_time and e_start_time >= big_start_time and date_range
+
+    if ((before_lap or after_lap or during) and date_range):
+      ordered_events.append(event)
+
+  return ordered_events
+
+def list_events(service, cal_id):
+  """
+  Returns a list of dicts (busy events)
+
+  """
+  app.logger.debug("Entering list_events")  
+  event_list = service.events().list(
+      calendarId=cal_id, 
+      #sortBy='startTime',
+      #timeMin=flask.session["begin_time"],
+      #timeMax=flask.session["end_time"],
+      singleEvents=True
+  ).execute()["items"]
+
+  result = [ ]
+  for event in event_list:
+    kind = event["kind"]
+    id = event["id"]
+    if "description" in event: 
+      desc = event["description"]
+    else:
+      desc = "(no description)"
+    if "summary" in event:
+      summary = event["summary"]
+    else:
+      summary = "(no summary)"
+    if "start" not in event:
+      start = "(no start)"
+    else:
+      if "dateTime" not in event["start"]:
+        start = event["start"]["date"]
+        end = event["end"]["date"]
+        
+      else:
+        start = event["start"]["dateTime"]
+        end = event["end"]["dateTime"]
+
+    result.append(
+      { "kind": kind,
+        "id": id,
+        "summary": summary,
+        "description": desc,
+        "start": start,
+        "end": end
+        })
+
+  return sorted(result, key=event_sort_key)
+
+
+def event_sort_key( event ):
+  return event["start"]
+
 def list_calendars(service):
     """
     Given a google 'service' object, return a list of
@@ -298,6 +422,7 @@ def list_calendars(service):
     for cal in calendar_list:
         kind = cal["kind"]
         id = cal["id"]
+        app.logger.debug("cal id: " + id)
         if "description" in cal: 
             desc = cal["description"]
         else:
@@ -315,6 +440,7 @@ def list_calendars(service):
             "selected": selected,
             "primary": primary
             })
+    app.logger.debug("Leaving list_calendars")
     return sorted(result, key=cal_sort_key)
 
 
@@ -344,7 +470,7 @@ def cal_sort_key( cal ):
 @app.template_filter( 'fmtdate' )
 def format_arrow_date( date ):
     try: 
-        normal = arrow.get( date )
+        normal = arrow.get( date, "yyyy-mm-dd" )
         return normal.format("ddd MM/DD/YYYY")
     except:
         return "(bad date)"
@@ -356,6 +482,14 @@ def format_arrow_time( time ):
         return normal.format("HH:mm")
     except:
         return "(bad time)"
+
+@app.template_filter( 'fmtdateTime' )
+def format_arrow_dateTime( dateTime ):
+  try:
+    normal = arrow.get(dateTime)
+    return normal.format("MM/DD/YYYY HH:mm")
+  except:
+    return "(bad dateTime)"
     
 #############
 
