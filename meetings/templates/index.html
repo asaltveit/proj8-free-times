@@ -62,6 +62,8 @@
      class="pull-down"
      style="background: #fff; cursor: pointer; padding: 5px 10px;
      border: 1px solid #ccc; width: 12em" >
+  Start time <input type="time" name="start_time"/>
+  End time <input type="time" name="end_time"/>
   <script type="text/javascript">
   $(function() {
   $('input[name="daterange"]').daterangepicker(
@@ -88,19 +90,38 @@
     shown in each row (but the order is across then down; I would
     prefer down then across). 
     -->
+<form action="/display" method="post">
 {% if g.calendars is defined  %}
   <div class="row">
   {% for cal in g.calendars if cal.selected %}
-          <div class="col-md-4">
-	   {{ cal.summary }}
-          </div>
+          <div class="col-md-4"> <input type="checkBox" name="calendar" id="calendar" value="{{ cal['id'] }}"/> <label for="calendar"> {{ cal['summary'] }}
+          </label></div>
          {% if loop.index is divisibleby 3 %}
           </div> <div class="row">
          {% endif %}
   {% endfor %}
   </div>
+  <input type="submit" value="submit"/>
 {% endif %}
-    
+</form> 
+
+
+
+<!-- Now it shows this one all of the time -->
+<!-- Show busy times -->
+{% if g.time_events is defined  %}
+  {% for group in g.time_events %}
+    {% for event in group %}
+      <div class="row">
+      desc: {{ event['description'] }}, sum: {{ event.summary }}, {{ event.start | fmtdateTime }} to {{ event.end | fmtdateTime }}
+      </div>
+    {% endfor %}
+  {% endfor %}
+{% endif %}
+<!-- -->
+
+
+
 
   </div>  <!-- container (for bootstrap) -->
   </body> </html>
