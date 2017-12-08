@@ -19,6 +19,8 @@ import httplib2   # used in oauth2 flow
 
 # Google API for services 
 from apiclient import discovery
+# Free Times
+from free_times import calculate_free
 
 ###
 # Globals
@@ -68,21 +70,27 @@ def choose():
     gcal_service = get_gcal_service(credentials)
     app.logger.debug("Returned from get_gcal_service")
     flask.g.calendars = list_calendars(gcal_service)
+    flask.session['calendars'] = list_calendars(gcal_service)
     return render_template('index.html')
 
 
 @app.route("/display", methods=["POST"])
 def display():
-    # search for busy times of the selected calendars
-    # assumes authorization and appropriate credentials 
-    # this far in the process
     """
-   """
+    search for busy times of the selected calendars
+    assumes authorization and appropriate credentials 
+    this far in the process
+    """
     app.logger.debug("In the 'display' function")
     cal_service = get_gcal_service(valid_credentials())
 
-    # time-ordered events list
-    flask.g.time_events = []
+    # repopulate calendars list
+    flask.g.calendars = flask.session['calendars']
+
+    # time-ordered events lists
+    flask.g.busy_events = []
+    flask.g.free_events = []
+    flask.g.thin_free_events = []
     # gets the selected checkBoxes' ids
     checkBox_id_list = flask.request.form.getlist("calendar")
     for cal_id in checkBox_id_list:
@@ -92,11 +100,12 @@ def display():
       app.logger.debug(events)
       # get events in correct time
       order = time_order(events)
-      app.logger.debug("ordered: ")
-      app.logger.debug(order)
-      flask.g.time_events.append(order)
+      flask.g.busy_events.append(order)
 
-      app.logger.debug(flask.g.time_events)
+      free_events = calculate_free(order, flask.session['begin_datetime'], flask.session['end_datetime'])
+      
+      app.logger.debug("free_events: " + str(free_events))
+      flask.g.free_events.append(free_events)
     
     return render_template('index.html')
 
@@ -238,6 +247,13 @@ def setrange():
     flask.session['begin_time'] = interpret_time(request.form.get('start_time'))
     flask.session['end_time'] = interpret_time(request.form.get('end_time'))
 
+    begin = daterange_parts[0] + " " + request.form.get('start_time')
+    #print(daterange_parts[2])
+    #print(begin)
+    end = daterange_parts[2] + " " + request.form.get('end_time')
+    flask.session['begin_datetime'] = interpret_datetime(begin)
+    flask.session['end_datetime'] = interpret_datetime(end)
+
     app.logger.debug("Setrange parsed {} - {}  dates as {} - {}".format(
       daterange_parts[0], daterange_parts[1], 
       flask.session['begin_date'], flask.session['end_date']))
@@ -310,6 +326,24 @@ def interpret_date( text ):
         flask.flash("Date '{}' didn't fit expected format 12/31/2001")
         raise
     return as_arrow.isoformat()
+
+def interpret_datetime( text ):
+  """
+  Convert date and time text to ISO format with local timezone.
+  """
+  app.logger.debug("Decoding time '{}'".format(text))
+  date_time_formats = ["MM/DD/YYYY ha", "MM/DD/YYYY h:mma",  "MM/DD/YYYY h:mm a", "MM/DD/YYYY H:mm", "MM/DD/YYYY hh:mm a"]
+  try: 
+        as_arrow = arrow.get(text, date_time_formats).replace(tzinfo=tz.tzlocal())
+        #as_arrow = as_arrow.replace(year=2016) #HACK see below
+        app.logger.debug("Succeeded interpreting time")
+  except:
+        app.logger.debug("Failed to interpret time")
+        flask.flash("dateTime '{}' didn't match accepted formats 12/23/2000 13:30 or 12/23/2000 1:30pm"
+              .format(text))
+        raise
+  return as_arrow.isoformat()
+
 
 def next_day(isotext):
     """

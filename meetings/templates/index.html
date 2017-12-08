@@ -92,6 +92,9 @@
     -->
 <form action="/display" method="post">
 {% if g.calendars is defined  %}
+  {% if g.busy_events is defined %}
+    <div> Choose New Calendars: </div>
+  {% endif %}
   <div class="row">
   {% for cal in g.calendars if cal.selected %}
           <div class="col-md-4"> <input type="checkBox" name="calendar" id="calendar" value="{{ cal['id'] }}"/> <label for="calendar"> {{ cal['summary'] }}
@@ -107,13 +110,25 @@
 
 
 
-<!-- Now it shows this one all of the time -->
 <!-- Show busy times -->
-{% if g.time_events is defined  %}
-  {% for group in g.time_events %}
+{% if g.busy_events is defined  %}
+  <div> Busy Times </div>
+  {% for group in g.busy_events %}
     {% for event in group %}
       <div class="row">
       desc: {{ event['description'] }}, sum: {{ event.summary }}, {{ event.start | fmtdateTime }} to {{ event.end | fmtdateTime }}
+      </div>
+    {% endfor %}
+  {% endfor %}
+{% endif %}
+
+<!-- Show free times -->
+{% if g.free_events is defined  %}
+  <div> Free Times </div>
+  {% for group in g.free_events %}
+    {% for event in group %}
+      <div class="row">
+      {{ event[0] | fmtdateTime }} to {{ event[1] | fmtdateTime }}
       </div>
     {% endfor %}
   {% endfor %}
